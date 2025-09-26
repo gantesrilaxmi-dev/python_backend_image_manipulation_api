@@ -1,2 +1,4 @@
-web: gunicorn image_api:app
+web: python image_api.py
+
+
 
