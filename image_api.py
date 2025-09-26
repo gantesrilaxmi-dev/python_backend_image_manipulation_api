@@ -331,5 +331,5 @@ if __name__ == "__main__":
     print("Available at: http://localhost:5000")
     print("Supported parameters: brightness, contrast, saturation, fading, exposure,")
     print("highlights, shadows, vibrance, temperature, hue, sharpness, vignette,")
-    print("enhance, dehaze, ambiance, noise, colorNoise, innerSpotlight, outerSpotlight")
+    print("enhance, dehaze, ambiance, noise, colorNoise, innerSpotlight, outerSpotlight", "tint")
     app.run(host="0.0.0.0", port=5000, debug=True)
