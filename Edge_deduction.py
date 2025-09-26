@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from sklearn.cluster import KMeans
 
 # -------------------------
 # Load Image
@@ -59,6 +60,68 @@ def overlay_edges(foreground, edges):
     print("Overlay saved as 'foreground_edges_overlay.jpg'")
 
 # -------------------------
+# Detect Dominant Colors Function
+# -------------------------
+def detect_dominant_colors(image, k=5):
+    img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    img_flat = img_rgb.reshape((-1, 3))
+    kmeans = KMeans(n_clusters=k, random_state=42).fit(img_flat)
+    colors = kmeans.cluster_centers_.astype(int)
+    return colors
+
+# -------------------------
+# Apply Selected Color as Background
+# -------------------------
+def apply_background_color(image, mask2, bg_color=(0, 255, 0)):
+    background = np.full(image.shape, bg_color[::-1], dtype=np.uint8)
+    foreground = image * mask2[:, :, np.newaxis]
+    combined = foreground + (background * (1 - mask2[:, :, np.newaxis]))
+    cv2.imshow("Background Replaced", combined)
+    cv2.imwrite("background_with_color.jpg", combined)
+    print(f"Background replaced with color {bg_color}")
+    return combined
+
+# -------------------------
+# Add Adaptive Shadow Behind Foreground
+# -------------------------
+def add_shadow(image, mask2, background_image=None, offset=(15, 15), blur_size=25):
+    shadow = np.zeros_like(image)
+
+    # Shift mask for shadow
+    M = np.float32([[1, 0, offset[0]], [0, 1, offset[1]]])
+    shifted_mask = cv2.warpAffine(mask2, M, (mask2.shape[1], mask2.shape[0]))
+
+    # Use provided background or white by default
+    if background_image is None:
+        background = np.full(image.shape, (255, 255, 255), dtype=np.uint8)
+    else:
+        if background_image.shape[:2] != image.shape[:2]:
+            background = cv2.resize(background_image, (image.shape[1], image.shape[0]))
+        else:
+            background = background_image.copy()
+
+    # Determine shadow color based on background brightness
+    avg_brightness = np.mean(background[shifted_mask == 1]) if np.any(shifted_mask) else 127
+    shadow_intensity = 50 if avg_brightness > 127 else 200
+    shadow_color = (shadow_intensity, shadow_intensity, shadow_intensity)
+
+    shadow[shifted_mask == 1] = shadow_color
+    shadow = cv2.GaussianBlur(shadow, (blur_size, blur_size), 0)
+
+    # Blend shadow with background
+    shadow_alpha = 0.5
+    with_shadow = cv2.addWeighted(background, 1, shadow, shadow_alpha, 0)
+
+    # Overlay foreground
+    foreground = image * mask2[:, :, np.newaxis]
+    combined = foreground + (with_shadow * (1 - mask2[:, :, np.newaxis]))
+
+    cv2.imshow("Foreground with Shadow", combined)
+    cv2.imwrite("foreground_with_shadow.jpg", combined)
+    print("Foreground with shadow applied on current background")
+    return combined
+
+# -------------------------
 # Menu Options
 # -------------------------
 while True:
@@ -67,7 +130,9 @@ while True:
     print("2. Foreground Extraction")
     print("3. Background Removal")
     print("4. Overlay Edges on Foreground")
-    print("5. Exit")
+    print("5. Color Deduction & Background Replace")
+    print("6. Add Shadow Behind Foreground")
+    print("7. Exit")
     choice = input("Enter option number: ")
 
     if choice == "1":
@@ -85,13 +150,25 @@ while True:
         except NameError:
             print("Run Edge Detection and Foreground Extraction first!")
     elif choice == "5":
+        try:
+            colors = detect_dominant_colors(img, k=5)
+            print("Detected Colors (R,G,B):")
+            for i, c in enumerate(colors):
+                print(f"{i+1}. {tuple(c)}")
+            idx = int(input("Select color number to use as background: ")) - 1
+            selected_color = tuple(colors[idx])
+            output = apply_background_color(img, mask2, bg_color=selected_color)
+        except NameError:
+            print("Run Foreground Extraction first!")
+    elif choice == "6":
+        try:
+            if 'output' in globals():
+                shadowed = add_shadow(img, mask2, background_image=output)
+            else:
+                shadowed = add_shadow(img, mask2)
+        except NameError:
+            print("Run Foreground Extraction first!")
+    elif choice == "7":
         break
     else:
         print("Invalid option, try again.")
-
-cv2.waitKey(0)
-cv2.destroyAllWindows()
-
-
-
-

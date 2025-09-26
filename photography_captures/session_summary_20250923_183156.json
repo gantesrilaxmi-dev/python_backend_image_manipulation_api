@@ -1,0 +1,29 @@
+{
+  "session_info": {
+    "start_time": "2025-09-23T18:30:15.295062",
+    "end_time": "2025-09-23T18:31:56.139492",
+    "duration_seconds": 100.84258,
+    "total_captures": 0
+  },
+  "performance_stats": {
+    "average_pose_quality": 82.85714285714286,
+    "max_quality_achieved": 82.85714285714286,
+    "stability_scores": [
+      82.85714285714286,
+      82.85714285714286,
+      82.85714285714286,
+      82.85714285714286,
+      82.85714285714286,
+      82.85714285714286,
+      82.85714285714286,
+      82.85714285714286,
+      82.85714285714286,
+      82.85714285714286
+    ]
+  },
+  "captures": [],
+  "settings_used": {
+    "person_height": 5.5,
+    "confidence_threshold": 0.3
+  }
+}
