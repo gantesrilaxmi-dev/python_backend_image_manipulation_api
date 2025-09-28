@@ -1,9 +1,10 @@
 import sys
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 import math
-import os
-import platform
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QPushButton, QTabWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap, QImage
 
 # --------------------------
 # Load Image
@@ -17,64 +18,44 @@ def load_image(path):
         sys.exit(1)
 
 # --------------------------
-# Open image in default viewer
-# --------------------------
-def open_image(path):
-    if platform.system() == "Windows":
-        os.startfile(path)
-    elif platform.system() == "Darwin":  # macOS
-        os.system(f"open '{path}'")
-    else:  # Linux
-        os.system(f"xdg-open '{path}'")
-
-# --------------------------
-# Parameter validation
-# --------------------------
-def validate_param(key, value):
-    """Validate parameter ranges: fading 0-100, others -100 to 100"""
-    if key == "fading":
-        return max(0, min(100, value))
-    else:
-        return max(-100, min(100, value))
-
-# --------------------------
-# Adjustments
+# Adjust Image
 # --------------------------
 def adjust_image(arr, params):
     h, w, _ = arr.shape
     out = arr.copy()
 
-    # Extract params (normalized to appropriate ranges)
-    brightness = params["brightness"] * 2.55
-    contrast = params["contrast"]
-    saturation = params["saturation"]
-    fading = params["fading"] * 2.55
-    exposure = params["exposure"] * 1.5
-    highlights = params["highlights"] * 1.0
-    shadows = params["shadows"] * 1.0
-    vibrance = params["vibrance"]
-    temperature = params["temperature"] * 0.5
-    hue = params["hue"]
-    sharpness = params["sharpness"]
-    vignette = params["vignette"]
-    enhance = params["enhance"] * 2.0
-    dehaze = params["dehaze"]
-    ambiance = params["ambiance"] * 2.0
-    noise = max(0, params["noise"] * 0.3)
-    color_noise = max(0, params["colorNoise"] * 0.3)
-    inner_spotlight = params["innerSpotlight"]
-    outer_spotlight = params["outerSpotlight"]
+    # --------------------------
+    # BASIC SLIDERS
+    # --------------------------
+    brightness = params.get("brightness", 0) * 2.55
+    contrast = params.get("contrast", 0)
+    saturation = params.get("saturation", 0)
+    fading = params.get("fading", 0) * 2.55
+    exposure = params.get("exposure", 0) * 1.5
+    highlights = params.get("highlights", 0)
+    shadows = params.get("shadows", 0)
+    vibrance = params.get("vibrance", 0)
+    temperature = params.get("temperature", 0) * 0.5
+    hue = params.get("hue", 0)
+    sharpness = params.get("sharpness", 0)
+    vignette = params.get("vignette", 0)
+    enhance = params.get("enhance", 0)
+    dehaze = params.get("dehaze", 0)
+    ambiance = params.get("ambiance", 0)
+    noise = max(0, params.get("noise", 0) * 0.3)
+    color_noise = max(0, params.get("colorNoise", 0) * 0.3)
+    inner_spotlight = params.get("innerSpotlight", 0)
+    outer_spotlight = params.get("outerSpotlight", 0)
 
-    # Basic adjustments
-    out[:, :, :3] += brightness
-    out[:, :, :3] += exposure
+    out[:, :, :3] += brightness + exposure
 
+    # Highlights / Shadows
     highlight_mask = (np.mean(out[:, :, :3], axis=2, keepdims=True) > 128)
-    out[:, :, :3] += highlights * highlight_mask * 0.5
-
     shadow_mask = (np.mean(out[:, :, :3], axis=2, keepdims=True) <= 128)
+    out[:, :, :3] += highlights * highlight_mask * 0.5
     out[:, :, :3] += shadows * shadow_mask * 0.5
 
+    # Fading
     out[:, :, :3] = out[:, :, :3] * (1 - fading / 255.0) + fading
 
     # Contrast
@@ -82,161 +63,192 @@ def adjust_image(arr, params):
         factor = (259 * (contrast + 255)) / (255 * (259 - contrast + 1e-5))
         out[:, :, :3] = factor * (out[:, :, :3] - 128) + 128
 
-    # Saturation + Vibrance
+    # Saturation / Vibrance
     if saturation != 0 or vibrance != 0:
         gray = np.mean(out[:, :, :3], axis=2, keepdims=True)
         sat_factor = (saturation + vibrance) / 100.0
         out[:, :, :3] = gray + (out[:, :, :3] - gray) * (1 + sat_factor)
 
-    # Temperature
-    if temperature != 0:
-        out[:, :, 0] += temperature
-        out[:, :, 2] -= temperature
-
-    # Hue shift
+    # Temperature & Hue
+    out[:, :, 0] += temperature
+    out[:, :, 2] -= temperature
     if hue != 0:
         angle = (hue / 100) * math.pi / 3
         u, w2 = math.cos(angle), math.sin(angle)
         r, g, b = out[:, :, 0], out[:, :, 1], out[:, :, 2]
         out[:, :, 0] = (.299 + .701 * u + .168 * w2) * r + (.587 - .587 * u + .330 * w2) * g + (.114 - .114 * u - .497 * w2) * b
         out[:, :, 1] = (.299 - .299 * u - .328 * w2) * r + (.587 + .413 * u + .035 * w2) * g + (.114 - .114 * u + .292 * w2) * b
-        out[:, :, 2] = (.299 - .3 * u + 1.25 * w2) * r + (.587 - .588 * u - 1.05 * w2) * g + (.114 + .886 * u - .2 * w2) * b
+        out[:, :, 2] = (.299 - .3 * u + 1.25 * w2) * r + (.587 - .588 * u - 1.05 * w2) * g + (.114 + .886 * w2 - 0.2 * w2) * b
 
-    # Sharpness
-    if sharpness != 0:
-        sharp_factor = 1 + sharpness / 200
-        out[:, :, :3] = (out[:, :, :3] - 128) * sharp_factor + 128
+    # --------------------------
+    # EFFECTS
+    # --------------------------
+    texture = params.get("texture", 0)
+    clarity = params.get("clarity", 0)
+    if texture != 0 or clarity != 0:
+        factor = 1 + (texture + clarity) / 100
+        out[:, :, :3] = (out[:, :, :3] - 128) * factor + 128
 
-    # Vignette and Spotlights
-    if vignette != 0 or inner_spotlight != 0 or outer_spotlight != 0:
+    dehaze_effect = params.get("dehaze_effect", 0)
+    if dehaze_effect != 0:
+        out[:, :, :3] += dehaze_effect
+
+    # --------------------------
+    # GRAIN
+    # --------------------------
+    grain_amount = params.get("grain_amount", 0)
+    grain_size = max(1, params.get("grain_size", 1))
+    grain_roughness = params.get("grain_roughness", 0)
+    grain_roundness = max(0.01, params.get("grain_roundness", 1.0))
+
+    if grain_amount != 0:
+        noise_arr = np.random.normal(0, abs(grain_amount)/2, size=(h//grain_size, w//grain_size, 3))
+        noise_arr = np.array(Image.fromarray(noise_arr.astype(np.float32)).resize((w,h)))
+        if grain_amount < 0:
+            noise_arr *= -1
+        out[:, :, :3] += noise_arr
+        if grain_roughness != 0:
+            out[:, :, :3] += np.random.normal(0, abs(grain_roughness), (h, w, 3))
+
+    # --------------------------
+    # SHARPENING
+    # --------------------------
+    sharpen_amount = params.get("sharpen_amount", 0)
+    sharpen_radius = max(0.1, params.get("sharpen_radius", 1))
+    if sharpen_amount != 0:
+        pil_img = Image.fromarray(np.clip(out,0,255).astype(np.uint8))
+        pil_img = pil_img.filter(ImageFilter.UnsharpMask(radius=sharpen_radius, percent=sharpen_amount, threshold=0))
+        out = np.array(pil_img).astype(np.float32)
+
+    # --------------------------
+    # VIGNETTE
+    # --------------------------
+    vignette_amount = params.get("vignette_amount", 0)
+    vignette_midpoint = max(0.01, params.get("vignette_midpoint", 0.5))
+    vignette_feather = max(0.01, params.get("vignette_feather", 0.5))
+    vignette_roundness = max(0.01, params.get("vignette_roundness", 1.0))
+    vignette_highlights = params.get("vignette_highlights", 0)
+
+    if vignette_amount != 0:
         y, x = np.indices((h, w))
-        dx, dy = x - w / 2, y - h / 2
-        dist = np.sqrt(dx ** 2 + dy ** 2) / (np.sqrt(w ** 2 + h ** 2) / 2)
-        dist = np.clip(dist, 0, 1)
-        vign = (1 - vignette / 100 * dist) ** 2 if vignette > 0 else (1 + abs(vignette) / 100 * (1 - dist)) ** 0.5
-        inner_factor = (1 + inner_spotlight / 100 * (1 - dist)) ** 1.2 if inner_spotlight != 0 else 1
-        outer_factor = (1 + outer_spotlight / 100 * dist) ** 1.2 if outer_spotlight != 0 else 1
-        vign_mask = vign * inner_factor * outer_factor
-        out[:, :, :3] *= vign_mask[..., None]
+        dx = (x - w/2) / (w/2) / vignette_roundness
+        dy = (y - h/2) / (h/2) / vignette_roundness
+        dist = np.sqrt(dx**2 + dy**2)
+        mask = 1 - vignette_amount/100 * (dist ** (1/vignette_feather))
+        mask = np.clip(mask + vignette_highlights/100, 0, 1)
+        mask = np.nan_to_num(mask, nan=1.0)
+        out[:, :, :3] *= mask[..., None]
 
-    # Enhance + Dehaze
-    if enhance != 0 or dehaze != 0:
-        deh_factor = 1 + dehaze / 200
-        out[:, :, :3] = (out[:, :, :3] + enhance - 128) * deh_factor + 128
+    # --------------------------
+    # NOISE
+    # --------------------------
+    if noise > 0:
+        out[:, :, :3] += np.random.normal(0, noise, (h, w, 1))
+    if color_noise > 0:
+        out[:, :, :3] += np.random.normal(0, color_noise, (h, w, 3))
 
-    # Ambiance
-    if ambiance != 0:
-        out[:, :, 0] += ambiance / 4
-        out[:, :, 1] += ambiance / 6
-        out[:, :, 2] += ambiance / 5
-
-    # Noise
-    if noise > 0 or color_noise > 0:
-        if noise > 0:
-            gray_noise = np.random.normal(0, noise, size=(h, w, 1))
-            out[:, :, :3] += gray_noise
-        if color_noise > 0:
-            color_noise_arr = np.random.normal(0, color_noise, size=(h, w, 3))
-            out[:, :, :3] += color_noise_arr
-
+    # --------------------------
+    # Final clip
+    # --------------------------
+    out[:, :, :3] = np.nan_to_num(out[:, :, :3], nan=0.0)
     out[:, :, :3] = np.clip(out[:, :, :3], 0, 255)
-
     result_img = Image.fromarray(out.astype(np.uint8))
+
     if result_img.mode == 'RGBA':
         rgb_img = Image.new('RGB', result_img.size, (255, 255, 255))
-        rgb_img.paste(result_img, mask=result_img.split()[3] if len(result_img.split()) == 4 else None)
+        rgb_img.paste(result_img, mask=result_img.split()[3])
         return rgb_img
+
     return result_img
 
 # --------------------------
-# Display parameters
+# GUI
 # --------------------------
-def display_params(params):
-    print("\n📊 Current Parameters:")
-    print("=" * 40)
-    for key, value in params.items():
-        range_info = "(0 to 100)" if key == "fading" else "(-100 to 100)"
-        print(f"{key:15}: {value:4} {range_info}")
-    print("=" * 40)
+class ImageEditorGUI(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("🎨 Image Editor GUI")
+        self.resize(1200, 800)
 
-# --------------------------
-# Main Interactive Loop
-# --------------------------
-def main():
-    params = {key: 0 for key in [
-        'brightness','contrast','saturation','fading','exposure',
-        'highlights','shadows','vibrance','temperature','hue',
-        'sharpness','vignette','enhance','dehaze',
-        'ambiance','noise','colorNoise','innerSpotlight','outerSpotlight'
-    ]}
+        self.params = {key: 0 for key in [
+            'brightness','contrast','saturation','fading','exposure','highlights','shadows','vibrance',
+            'temperature','hue','sharpness','vignette','enhance','dehaze','ambiance','noise','colorNoise','innerSpotlight','outerSpotlight',
+            'texture','clarity','dehaze_effect',
+            'grain_amount','grain_size','grain_roughness','grain_roundness',
+            'sharpen_amount','sharpen_radius','sharpen_detail','sharpen_masking',
+            'vignette_amount','vignette_midpoint','vignette_feather','vignette_roundness','vignette_highlights'
+        ]}
 
-    print("🎨 Interactive Image Editor")
-    print("=" * 50)
-    print("Commands: set <param> <value>, show, reset, save, help, quit")
-    print("Preview now updates automatically after each set command!\n")
+        self.original_arr = load_image("input.jpg")
 
-    original_arr = load_image("input.jpg")
-    print("✅ input.jpg loaded successfully!")
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
 
-    while True:
-        print("\n> ", end="")
-        cmd = input().strip().lower()
+        # Image display
+        self.image_label = QLabel()
+        self.layout.addWidget(self.image_label)
+        self.update_preview()
 
-        if cmd in ["quit","exit","q"]:
-            print("👋 Goodbye!")
-            break
+        # Tabs
+        self.tabs = QTabWidget()
+        self.layout.addWidget(self.tabs)
 
-        elif cmd == "save":
-            final = adjust_image(original_arr.copy(), params)
-            final.save("output.jpg")
-            print("✅ Final image saved as 'output.jpg'")
-            open_image("output.jpg")
+        # --- Create Tabs ---
+        self.create_tab("Basic", [
+            'brightness','contrast','saturation','exposure','highlights','shadows','vibrance',
+            'temperature','hue','sharpness','fading','vignette','enhance','dehaze','ambiance',
+            'noise','colorNoise','innerSpotlight','outerSpotlight'
+        ])
+        self.create_tab("Effects", ['texture','clarity','dehaze_effect'])
+        self.create_tab("Grain", ['grain_amount','grain_size','grain_roughness','grain_roundness'])
+        self.create_tab("Sharpening", ['sharpen_amount','sharpen_radius','sharpen_detail','sharpen_masking'])
+        self.create_tab("Vignette", ['vignette_amount','vignette_midpoint','vignette_feather','vignette_roundness','vignette_highlights'])
 
-        elif cmd in ["show","display","params"]:
-            display_params(params)
+        # Save button
+        save_btn = QPushButton("Save Image")
+        save_btn.clicked.connect(self.save_image)
+        self.layout.addWidget(save_btn)
 
-        elif cmd == "reset":
-            for key in params: params[key] = 0
-            print("🔄 All parameters reset to 0")
-            display_params(params)
+    def create_tab(self, name, sliders):
+        tab = QWidget()
+        vbox = QVBoxLayout()
+        tab.setLayout(vbox)
 
-        elif cmd.startswith("set "):
-            parts = cmd.split()
-            if len(parts) != 3:
-                print("❌ Usage: set <parameter> <value>")
-                continue
+        for s in sliders:
+            hbox = QHBoxLayout()
+            label = QLabel(f"{s}: 0")
+            slider = QSlider(Qt.Orientation.Horizontal)
+            slider.setMinimum(-100)
+            slider.setMaximum(100)
+            slider.setValue(0)
+            slider.valueChanged.connect(lambda value, key=s, l=label: self.slider_changed(key, value, l))
+            hbox.addWidget(label)
+            hbox.addWidget(slider)
+            vbox.addLayout(hbox)
 
-            param_name, value_str = parts[1], parts[2]
-            if param_name not in params:
-                print(f"❌ Unknown parameter: {param_name}")
-                continue
+        self.tabs.addTab(tab, name)
 
-            try:
-                value = int(value_str)
-                validated_value = validate_param(param_name, value)
-                params[param_name] = validated_value
-                print(f"✅ {param_name} set to {validated_value}")
+    def slider_changed(self, key, value, label):
+        label.setText(f"{key}: {value}")
+        self.params[key] = value
+        self.update_preview()
 
-                # Automatic preview
-                preview = adjust_image(original_arr.copy(), params)
-                preview.save("preview.jpg")
-                print("👁️  Preview updated")
-                open_image("preview.jpg")
+    def update_preview(self):
+        preview = adjust_image(self.original_arr.copy(), self.params)
+        preview = preview.convert("RGB")
+        data = preview.tobytes("raw", "RGB")
+        qimage = QImage(data, preview.width, preview.height, QImage.Format.Format_RGB888)
+        pixmap = QPixmap.fromImage(qimage)
+        self.image_label.setPixmap(pixmap.scaled(self.image_label.width(), self.image_label.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
-            except ValueError:
-                print("❌ Value must be an integer")
+    def save_image(self):
+        final = adjust_image(self.original_arr.copy(), self.params)
+        final.save("output.jpg")
+        print("✅ Image saved as output.jpg")
 
-        elif cmd in ["help","h"]:
-            print("Commands: set <param> <value>, show, reset, save, help, quit")
-
-        else:
-            if cmd:
-                print(f"❌ Unknown command: {cmd}")
 
 if __name__ == "__main__":
-    main()
-
-
-
-
-
+    app = QApplication(sys.argv)
+    gui = ImageEditorGUI()
+    gui.show()
+    sys.exit(app.exec())
