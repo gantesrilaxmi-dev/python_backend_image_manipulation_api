@@ -273,6 +273,16 @@ def adjust_image(arr, params):
         h = Image.fromarray(h_np.astype(np.uint8))
         img = Image.merge('HSV', (h, s, v)).convert('RGB')
 
+    # ---------------- Tint ----------------
+    tint = validate_param(params.get("tint", 0), -100, 100, 0)  # -100 = green, 0 = none, +100 = magenta
+    if tint != 0:
+        np_img = np.array(img).astype(np.float32)
+        np_img[:, :, 0] += tint    # Red channel
+        np_img[:, :, 1] -= tint    # Green channel
+        np_img = np.clip(np_img, 0, 255)
+        img = Image.fromarray(np_img.astype(np.uint8))
+
+
     return np.array(img).astype(np.float32)
 
 # ----------------------
